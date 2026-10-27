@@ -45,9 +45,18 @@ export function activate() {
     const panel = document.createElement('section');
     panel.id = `${ID}-settings`;
     panel.setAttribute('aria-label', 'Momiao Gemini 防截断');
-    panel.style.cssText = 'border:1px solid var(--SmartThemeBorderColor,#888);border-radius:8px;padding:12px;margin:8px 0;';
-    const title = document.createElement('h4');
-    title.textContent = 'Momiao Gemini 防截断'; title.style.margin = '0 0 8px';
+    const drawer = document.createElement('div');
+    drawer.className = 'inline-drawer';
+    const header = document.createElement('div');
+    header.className = 'inline-drawer-toggle inline-drawer-header';
+    const title = document.createElement('b');
+    title.textContent = 'Momiao Gemini 防截断';
+    const icon = document.createElement('div');
+    icon.className = 'inline-drawer-icon fa-solid fa-circle-chevron-down down';
+    icon.setAttribute('aria-hidden', 'true');
+    header.append(title, icon);
+    const content = document.createElement('div');
+    content.className = 'inline-drawer-content';
     const label = document.createElement('label');
     label.className = 'checkbox_label';
     const toggle = document.createElement('input');
@@ -56,7 +65,7 @@ export function activate() {
     label.append(toggle, text);
     const hint = document.createElement('small');
     hint.style.display = 'block';
-    hint.textContent = '让模型把正文放进工具参数，再还原为聊天文字。使用自定义 OpenAI 连接与 momiao.win；请先停用其他防截断脚本和预设输出工具。';
+    hint.textContent = '让模型把正文放进工具参数，再还原为聊天文字。流式或非流式跟随酒馆的输出设置。使用自定义 OpenAI 连接与 momiao.win；请先停用其他防截断脚本和预设输出工具。';
     const status = document.createElement('p');
     status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     status.style.cssText = 'margin:8px 0 0;overflow-wrap:anywhere;';
@@ -65,7 +74,8 @@ export function activate() {
       globalThis.SillyTavern.getContext().saveSettingsDebounced();
       idle();
     });
-    panel.append(title, label, hint, status); parent.append(panel);
+    content.append(label, hint, status);
+    drawer.append(header, content); panel.append(drawer); parent.append(panel);
     state.panel = panel; state.status = status; idle();
   };
   state.wrappedFetch = createTransportFetch(state.originalFetch.bind(window), {

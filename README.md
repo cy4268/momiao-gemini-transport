@@ -1,8 +1,8 @@
-# Momiao Gemini 防截断 0.2.1
+# Momiao Gemini 防截断 0.2.2
 
 独立的 SillyTavern / TauriTavern 前端扩展。它让 Gemini 把最终正文放进一个工具的 `content` 参数，再实时还原为普通聊天文字。不会运行模型生成的代码。
 
-0.2.1 已移除模型路由观察、记录和魔法棒面板，保留防截断功能。已安装 0.2.0 的用户更新后刷新或重启酒馆即可。
+0.2.2 将扩展设置改为酒馆原生折叠栏，默认收起，点击标题展开。外观和展开动画跟随酒馆与当前主题，防截断传输逻辑保持不变。更新后刷新或重启酒馆即可。
 
 兼容性源码基线：**SillyTavern 1.19.0、TauriTavern 2.4.0**。用户设备中的实际安装和完整公网链路尚待验收。代码不依赖旧版 Vertex 插件、Tavern Helper、SPreset、服务端插件或另一个网关。
 
@@ -18,7 +18,7 @@ https://github.com/cy4268/momiao-gemini-transport
 
 安装后刷新或重启酒馆。后续可通过扩展管理器更新。无需服务端插件、`npm install` 或单独配置密钥。
 
-**离线安装：**到 [Releases](https://github.com/cy4268/momiao-gemini-transport/releases/latest) 下载对应附件。标准 SillyTavern 使用 `Momiao-Gemini-0.2.1-ST.zip`，把其中的 `momiao-gemini-transport` 文件夹解压到酒馆的：
+**离线安装：**到 [Releases](https://github.com/cy4268/momiao-gemini-transport/releases/latest) 下载对应附件。标准 SillyTavern 使用 `Momiao-Gemini-0.2.2-ST.zip`，把其中的 `momiao-gemini-transport` 文件夹解压到酒馆的：
 
 ```text
 data/<你的用户目录>/extensions/momiao-gemini-transport/
@@ -26,7 +26,7 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 
 该文件夹里应直接看到 `manifest.json` 和 `index.js`，不要再套一层同名目录。刷新酒馆，在「扩展设置」中找到「Momiao Gemini 防截断」。这是前端扩展，不放进 `plugins/`，也不需要 `npm install`。
 
-**TT 2.4.0：**使用单独的 `Momiao-Gemini-0.2.1-TT-import.zip`，不解压，交给 TT 的数据导入功能。导入结束后重启 TT，再打开扩展设置。这个包的所有文件都位于 `extensions/third-party/momiao-gemini-transport/`，不含聊天、角色、密钥、数据库或设置文件。已按 TT 2.4.0 固定源码核对识别与合并规则，实际设备导入尚待验收。
+**TT 2.4.0：**使用单独的 `Momiao-Gemini-0.2.2-TT-import.zip`，不解压，交给 TT 的数据导入功能。导入结束后重启 TT，再打开扩展设置。这个包的所有文件都位于 `extensions/third-party/momiao-gemini-transport/`，不含聊天、角色、密钥、数据库或设置文件。已按 TT 2.4.0 固定源码核对识别与合并规则，实际设备导入尚待验收。
 
 两个包内容相同，只是目录布局不同。标准 ST 包、GitHub 自动生成的 Source code ZIP 都不能直接当 TT 数据包导入。离线安装没有 Git 更新来源；更新时导入新版包。已离线安装 0.1.0 的用户可直接覆盖更新；如改用 Git 安装，先在扩展管理器移除旧副本再安装，避免同时加载两份。
 
@@ -35,10 +35,10 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 1. 先关闭原来的 Vertex 防截断扩展、S 喵防截断脚本，以及预设中 `izumi_content` / `game_content` 等输出工具。预设普通的角色、文风内容可以保留。多个防截断拦截器同时运行不在本版验收范围内。
 2. 酒馆连接选择「聊天补全 → 自定义」。TT 的协议选择 **OpenAI Chat Completions**。
 3. 沿用原来的 `https://momiao.win/v1` 地址、API 密钥和完整模型名，例如 `AIS/gemini-4-argon`、`快速v/gemini-4-argon`。插件不单独保存密钥。
-4. 在「扩展设置 → Momiao Gemini 防截断」打开「启用正文工具传输」。默认关闭。
+4. 在「扩展设置」点击「Momiao Gemini 防截断」标题展开，再打开「启用正文工具传输」。折叠栏默认收起；功能开关默认关闭，更新时保留原有开关设置。
 5. 先发一句简短问候，在扩展设置查看状态，应从等待上游回复变为正在接收正文及工具正文接收完成。如果状态写明冲突，先处理提示的已有工具或附加参数。
 
-流式和非流式跟随酒馆本来的选择；插件没有第二套流式开关。停止按钮仍由酒馆控制。「继续」仍由用户点击发起，插件不会自动重试或连续请求。开关变化对下一次请求生效，不会撤销正在进行的请求。
+流式和非流式跟随酒馆本来的选择；插件没有第二套流式开关。如果上游把工具参数攒齐才返回，即使开启流式，也可能整段出现；插件不能让尚未收到的文字提前显示。停止按钮仍由酒馆控制。「继续」仍由用户点击发起，插件不会自动重试或连续请求。开关变化对下一次请求生效，不会撤销正在进行的请求。
 
 ## 生效条件与限制
 
@@ -53,7 +53,7 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 
 ## 验证范围
 
-0.1.0 阶段的两次短调用验证过快速v、AIS-PG 的上游工具能力，没有验证长篇抗截断成功率，也没有经过用户设备中的 ST / TT。0.2.1 恢复该版本的传输核心，复用现有回归测试验证；本次移除功能没有新增真实模型调用或变更生产服务配置。
+0.1.0 阶段的两次短调用验证过快速v、AIS-PG 的上游工具能力，没有验证长篇抗截断成功率，也没有经过用户设备中的 ST / TT。0.2.1 恢复该版本的传输核心，复用现有回归测试验证。0.2.2 只调整设置界面，按上述两个固定版本的原生折叠栏结构、事件处理和默认隐藏样式核对，并检查 JavaScript 语法及扩展清单；没有新增测试、真实模型调用或生产服务配置变更。手机上的主题显示与点击交互仍需实际设备确认。
 
 ## 关闭与卸载
 
