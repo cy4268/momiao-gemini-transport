@@ -1,0 +1,15 @@
+{
+  "display_name": "Momiao Gemini 防截断",
+  "loading_order": 110,
+  "js": "index.js",
+  "author": "Momiao",
+  "version": "0.2.0",
+  "homePage": "https://github.com/cy4268/momiao-gemini-transport",
+  "hooks": {
+    "activate": "activate",
+    "enable": "activate",
+    "disable": "deactivate",
+    "clean": "deactivate",
+    "delete": "deactivate"
+  }
+}
