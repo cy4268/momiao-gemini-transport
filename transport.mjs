@@ -1,5 +1,3 @@
-import { createRouteRecord } from './routing.mjs';
-
 const TOOL = 'momiao_reply';
 const PATH = '/api/backends/chat-completions/generate';
 const LIMIT = 4 * 1024 * 1024;
@@ -232,11 +230,9 @@ async function restoreJSON(response, stream, onStatus) {
   return new Response(JSON.stringify(value), { headers: responseHeaders(response, 'application/json; charset=utf-8') });
 }
 
-export function createTransportFetch(originalFetch, { origin, getEnabled = () => false, onStatus = () => {},
-  getMonitoring = () => false, onRoute = () => {} }) {
+export function createTransportFetch(originalFetch, { origin, getEnabled = () => false, onStatus = () => {} }) {
   return async function momiaoFetch(input, init) {
-    const enabled = getEnabled(), monitoring = getMonitoring();
-    if (!enabled && !monitoring) return originalFetch(input, init);
+    if (!getEnabled()) return originalFetch(input, init);
     let url;
     try { url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, origin); }
     catch { return originalFetch(input, init); }
@@ -249,20 +245,13 @@ export function createTransportFetch(originalFetch, { origin, getEnabled = () =>
     let upstream;
     try { upstream = new URL(body.custom_url); } catch { return originalFetch(input, init); }
     if (upstream.protocol !== 'https:' || upstream.hostname !== 'momiao.win' || !/(^|\/)gemini[-_]/i.test(body.model || '') || /image|embedding/i.test(body.model)) return originalFetch(input, init);
-    const prepared = enabled ? prepare(body) : null;
-    const useTool = prepared && typeof prepared !== 'string';
-    const route = monitoring ? createRouteRecord(body.model, useTool ? 'tool' : 'observe', onRoute) : null;
-    if (!useTool) {
-      if (typeof prepared === 'string') onStatus(`本次按普通请求发送：${prepared}`);
-      try { const response = await originalFetch(input, init); return route ? route.observe(response) : response; }
-      catch (error) { route?.fail(); throw error; }
-    }
+    const prepared = prepare(body);
+    if (typeof prepared === 'string') { onStatus(`本次按普通请求发送：${prepared}`); return originalFetch(input, init); }
     onStatus('已启用正文工具，等待上游回复…');
     const options = { ...init, body: JSON.stringify(prepared) };
     let response;
     try {
       response = isRequest ? await originalFetch(new Request(input, options)) : await originalFetch(input, options);
-      if (route) response = route.observe(response);
       if (!response.ok) { onStatus(`上游 HTTP ${response.status}，未自动重试`); return response; }
       if (response.headers.get('content-type')?.includes('text/event-stream')) {
         if (!body.stream) { await response.body?.cancel(); throw fault('unexpected_stream', '上游为非流式请求返回了流式数据'); }
@@ -271,7 +260,6 @@ export function createTransportFetch(originalFetch, { origin, getEnabled = () =>
       }
       return await restoreJSON(response, body.stream === true, onStatus);
     } catch (error) {
-      route?.fail();
       onStatus(error.name === 'AbortError' ? '已停止生成，未自动重试' : `请求未完成：${error.message}`);
       if (!response || error.name === 'AbortError') throw error;
       return new Response(JSON.stringify(errorPacket(error)), { status: 502, headers: { 'content-type': 'application/json' } });

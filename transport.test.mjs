@@ -12,14 +12,13 @@ test('tool transport displays fragmented text early and never conceals an incomp
     messages: [{ role: 'user', content: '写一句问候' }], max_tokens: 1024 };
   const signal = new AbortController().signal;
   let upstream, sent, capturedSignal, calls = 0;
-  const statuses = [], routes = [];
+  const statuses = [];
   const wrapped = createTransportFetch(async (input, init) => {
     calls++;
     sent = JSON.parse(init.body); capturedSignal = init.signal;
     return new Response(new ReadableStream({ start(controller) { upstream = controller; } }),
       { headers: { 'content-type': 'text/event-stream' } });
-  }, { origin, getEnabled: () => true, getMonitoring: () => true,
-    onRoute: route => routes.push(route), onStatus: text => statuses.push(text) });
+  }, { origin, getEnabled: () => true, onStatus: text => statuses.push(text) });
 
   const response = await wrapped(url, { method: 'POST', body: JSON.stringify(body), signal });
   assert.equal(sent.tools?.[0]?.function?.parameters?.properties?.content?.type, 'string');
@@ -29,7 +28,7 @@ test('tool transport displays fragmented text early and never conceals an incomp
   assert.deepEqual(sent.messages.find(m => m.role === 'user'), body.messages[0]);
   const name = sent.tools[0].function.name;
   const reader = response.body.getReader();
-  const packet = (argumentsText, first = false) => `data: ${JSON.stringify({ id: 'test', ...(first ? { model: 'gemini-3.1-flash-lite' } : {}), choices: [{ index: 0,
+  const packet = (argumentsText, first = false) => `data: ${JSON.stringify({ id: 'test', choices: [{ index: 0,
     delta: { tool_calls: [{ index: 0, ...(first ? { id: 'call-1', type: 'function' } : {}),
       function: { ...(first ? { name } : {}), arguments: argumentsText } }] }, finish_reason: null }] })}\r\n\r\n`;
   // Split inside Chinese UTF-8 bytes as well as inside JSON unicode escapes.
@@ -50,11 +49,6 @@ test('tool transport displays fragmented text early and never conceals an incomp
   assert.ok(frames.every(x => !x.choices?.[0]?.delta?.tool_calls));
   assert.match(output, /data: \[DONE\]/);
   assert.equal(calls, 1);
-  assert.equal(routes.at(-1).requestedModel, body.model);
-  assert.deepEqual(routes.at(-1).fields, [{ field: 'model', value: 'gemini-3.1-flash-lite' }]);
-  assert.deepEqual(routes.at(-1).finishReasons, ['tool_calls']);
-  assert.equal(routes.at(-1).state, 'complete');
-  assert.doesNotMatch(JSON.stringify(routes), /写一句问候|朋友|结束/);
 
   const incomplete = await wrapped(url, { method: 'POST', body: JSON.stringify(body), signal });
   upstream.enqueue(encoder.encode(packet('{"content":"已收到半句', true))); upstream.close();
@@ -112,28 +106,4 @@ test('tool transport displays fragmented text early and never conceals an incomp
   const line = encoder.encode(`data: ${'x'.repeat(2100000)}\n`);
   upstream.enqueue(line); upstream.enqueue(line); upstream.close();
   assert.match(await oversized.text(), /event_too_large/);
-
-  // Observation works with protection off and never edits the response or prompt.
-  const observed = [];
-  const raw = 'data: {"model":"gemini-4-argon","modelVersion":"gemini-3.1-flash-lite","choices":[]}\n\n' +
-    'data: {"model":"gemini-4-argon","choices":[{"delta":{"content":"ordinary"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
-  const monitor = createTransportFetch(async (_input, init) => {
-    assert.deepEqual(JSON.parse(init.body), body);
-    return new Response(raw, { headers: { 'content-type': 'text/event-stream' } });
-  }, { origin, getMonitoring: () => true, onRoute: route => observed.push(route) });
-  assert.equal(await (await monitor(url, { method: 'POST', body: JSON.stringify(body) })).text(), raw);
-  assert.deepEqual(observed.at(-1).fields, [
-    { field: 'model', value: 'gemini-4-argon' }, { field: 'modelVersion', value: 'gemini-3.1-flash-lite' },
-  ]);
-  const absent = [];
-  const missing = createTransportFetch(async () => Response.json({ choices: [{ message: { content: 'hello' }, finish_reason: 'stop' }] }),
-    { origin, getMonitoring: () => true, onRoute: route => absent.push(route) });
-  await (await missing(url, { method: 'POST', body: JSON.stringify({ ...body, stream: false }) })).text();
-  assert.deepEqual(absent.at(-1).fields, []); // Never fill a missing response model from the request.
-  assert.equal(absent.at(-1).state, 'complete');
-
-  const malformed = 'data: invalid-json\n\ndata: [DONE]\n\n';
-  const tolerant = createTransportFetch(async () => new Response(malformed, { headers: { 'content-type': 'text/event-stream' } }),
-    { origin, getMonitoring: () => true, onRoute: () => { throw new Error('panel closed'); } });
-  assert.equal(await (await tolerant(url, { method: 'POST', body: JSON.stringify(body) })).text(), malformed);
 });

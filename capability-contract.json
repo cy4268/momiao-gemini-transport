@@ -7,8 +7,6 @@
     { "id": "save-settings", "owner": "sillytavern", "symbol": "SillyTavern.getContext().saveSettingsDebounced", "required": true, "fallback": null },
     { "id": "fetch", "owner": "provider", "symbol": "fetch", "required": true, "fallback": null },
     { "id": "stream", "owner": "provider", "symbol": "ReadableStream", "required": true, "fallback": null },
-    { "id": "text-decoder", "owner": "provider", "symbol": "TextDecoder", "required": true, "fallback": null },
-    { "id": "native-popup", "owner": "sillytavern", "symbol": "SillyTavern.getContext().Popup", "required": false, "fallback": "扩展设置显示不支持原生弹窗；不自造宿主 API" },
-    { "id": "popup-type", "owner": "sillytavern", "symbol": "SillyTavern.getContext().POPUP_TYPE.TEXT", "required": false, "fallback": "禁用路由弹窗，保留传输功能" }
+    { "id": "text-decoder", "owner": "provider", "symbol": "TextDecoder", "required": true, "fallback": null }
   ]
 }
