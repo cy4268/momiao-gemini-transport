@@ -3,7 +3,7 @@
   "loading_order": 110,
   "js": "index.js",
   "author": "Momiao",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "homePage": "https://github.com/cy4268/momiao-gemini-transport",
   "hooks": {
     "activate": "activate",

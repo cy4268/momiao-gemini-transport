@@ -102,6 +102,26 @@ function responseHeaders(response, type) {
   return headers;
 }
 
+async function hasEventStreamPrefix(response) {
+  if (!response.body) return false;
+  const reader = response.clone().body.getReader(), utf8 = new TextDecoder();
+  let inspected = 0;
+  try {
+    while (inspected < LIMIT) {
+      const { value, done } = await reader.read();
+      if (done) return false;
+      inspected += value.byteLength;
+      const prefix = utf8.decode(value, { stream: true }).trimStart();
+      // A split data/event/id/retry field or comment is already distinct from JSON.
+      if (prefix) return /^[:deir]/.test(prefix);
+    }
+    throw fault('event_too_large', '响应开头的空白超过大小限制');
+  } finally {
+    // Awaiting one cloned branch's cancellation would wait for the original too.
+    void reader.cancel().catch(() => {});
+  }
+}
+
 function completionStatus(reason, usedTool) {
   if (reason === 'length') return '回复达到输出长度上限；已保留收到的文字，可手动继续';
   if (reason === 'content_filter') return '上游因内容过滤结束；已保留收到的文字';
@@ -253,7 +273,9 @@ export function createTransportFetch(originalFetch, { origin, getEnabled = () =>
     try {
       response = isRequest ? await originalFetch(new Request(input, options)) : await originalFetch(input, options);
       if (!response.ok) { onStatus(`上游 HTTP ${response.status}，未自动重试`); return response; }
-      if (response.headers.get('content-type')?.includes('text/event-stream')) {
+      // ST can forward SSE without Content-Type. Peek without consuming the reply.
+      if (response.headers.get('content-type')?.toLowerCase().includes('text/event-stream') ||
+          (body.stream === true && await hasEventStreamPrefix(response))) {
         if (!body.stream) { await response.body?.cancel(); throw fault('unexpected_stream', '上游为非流式请求返回了流式数据'); }
         if (!response.body) throw fault('empty_reply', '上游没有返回响应内容');
         return restoreStream(response, onStatus);
@@ -261,6 +283,7 @@ export function createTransportFetch(originalFetch, { origin, getEnabled = () =>
       return await restoreJSON(response, body.stream === true, onStatus);
     } catch (error) {
       onStatus(error.name === 'AbortError' ? '已停止生成，未自动重试' : `请求未完成：${error.message}`);
+      await response?.body?.cancel().catch(() => {});
       if (!response || error.name === 'AbortError') throw error;
       return new Response(JSON.stringify(errorPacket(error)), { status: 502, headers: { 'content-type': 'application/json' } });
     }

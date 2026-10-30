@@ -69,8 +69,9 @@ test('tool transport displays fragmented text early and never conceals an incomp
 
   let cancelled = false;
   const cancelFetch = createTransportFetch(async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(encoder.encode(': keepalive\n\n')); },
     cancel() { cancelled = true; },
-  }), { headers: { 'content-type': 'text/event-stream' } }), { origin, getEnabled: () => true });
+  })), { origin, getEnabled: () => true });
   const cancellable = await cancelFetch(url, { method: 'POST', body: JSON.stringify(body) });
   await cancellable.body.cancel();
   assert.equal(cancelled, true);
@@ -79,9 +80,11 @@ test('tool transport displays fragmented text early and never conceals an incomp
     assert.equal(request.headers.get('x-test-header'), 'preserved');
     const payload = await request.json();
     assert.equal(payload.tools[0].function.name, name);
-    return Response.json({ choices: [{ index: 0, message: { role: 'assistant', content: null,
+    const reply = Response.json({ choices: [{ index: 0, message: { role: 'assistant', content: null,
       tool_calls: [{ id: 'call-json', type: 'function', function: { name, arguments: '{"content":"一次性回复"}' } }] },
       finish_reason: 'tool_calls' }], usage: { completion_tokens: 5 } });
+    reply.headers.delete('content-type');
+    return reply;
   }, { origin, getEnabled: () => true });
   const jsonReply = await jsonFetch(new Request(url, { method: 'POST', headers: { 'x-test-header': 'preserved' },
     body: JSON.stringify({ ...body, stream: false }) }));
@@ -90,6 +93,12 @@ test('tool transport displays fragmented text early and never conceals an incomp
   assert.equal(json.choices[0].message.tool_calls, undefined);
   assert.equal(json.choices[0].finish_reason, 'stop');
   assert.equal(json.usage.completion_tokens, 5);
+  const jsonFallback = await jsonFetch(new Request(url, { method: 'POST', headers: { 'x-test-header': 'preserved' },
+    body: JSON.stringify(body) }));
+  const jsonFallbackText = await jsonFallback.text();
+  assert.match(jsonFallbackText, /一次性回复/);
+  assert.match(jsonFallbackText, /data: \[DONE\]/);
+  assert.doesNotMatch(jsonFallbackText, /"error"/);
 
   const contradictory = await wrapped(url, { method: 'POST', body: JSON.stringify(body) });
   upstream.enqueue(encoder.encode(packet('{"content":"上游文字"}', true)));
@@ -106,4 +115,24 @@ test('tool transport displays fragmented text early and never conceals an incomp
   const line = encoder.encode(`data: ${'x'.repeat(2100000)}\n`);
   upstream.enqueue(line); upstream.enqueue(line); upstream.close();
   assert.match(await oversized.text(), /event_too_large/);
+
+  // Standard ST forwards the stream body without forwarding Content-Type.
+  let forwarded;
+  const forwardedFetch = createTransportFetch(async () => new Response(new ReadableStream({
+    start(controller) {
+      forwarded = controller;
+      const bytes = encoder.encode(packet('{"content":"无类型标记的流式正文"}', true));
+      controller.enqueue(bytes.slice(0, 1)); controller.enqueue(bytes.slice(1));
+    },
+  })), { origin, getEnabled: () => true });
+  const forwardedReply = await forwardedFetch(url, { method: 'POST', body: JSON.stringify(body) });
+  assert.equal(forwardedReply.status, 200);
+  const forwardedReader = forwardedReply.body.getReader();
+  let forwardedText = new TextDecoder().decode((await forwardedReader.read()).value);
+  assert.match(forwardedText, /无类型标记的流式正文/);
+  forwarded.enqueue(encoder.encode('data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n'));
+  forwarded.close();
+  for (;;) { const r = await forwardedReader.read(); if (r.done) break; forwardedText += new TextDecoder().decode(r.value); }
+  assert.match(forwardedText, /data: \[DONE\]/);
+  assert.doesNotMatch(forwardedText, /"error"|"tool_calls"/);
 });
