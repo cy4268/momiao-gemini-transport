@@ -135,4 +135,48 @@ test('tool transport displays fragmented text early and never conceals an incomp
   for (;;) { const r = await forwardedReader.read(); if (r.done) break; forwardedText += new TextDecoder().decode(r.value); }
   assert.match(forwardedText, /data: \[DONE\]/);
   assert.doesNotMatch(forwardedText, /"error"|"tool_calls"/);
+
+  // Build splitter 0.1.0 supplies the same native messages twice: ST's
+  // include-body merge wins on the wire, so the tool instruction must survive it.
+  const buildMessages = [{ role: 'user', content: [
+    { type: 'text', text: 'Read attachment-1 and answer in Chinese.' },
+    { type: 'file', file: { filename: 'attachment-1', file_data: 'data:text/plain;base64,e30=' } },
+  ] }];
+  const buildExtra = { model: 'gemini-3.8-flash-build', messages: buildMessages, reasoning_effort: 'low' };
+  const build = { ...body, ...buildExtra, custom_include_body: JSON.stringify(buildExtra),
+    custom_exclude_body: '["temperature","max_tokens","max_completion_tokens"]' };
+  let buildSent;
+  const buildFetch = createTransportFetch(async (_input, init) => {
+    buildSent = JSON.parse(init.body);
+    return Response.json({ choices: [{ message: { role: 'assistant', tool_calls: [{
+      function: { name, arguments: '{"content":"Build 正文"}' },
+    }] }, finish_reason: 'tool_calls' }] });
+  }, { origin, getEnabled: () => true, onStatus: text => statuses.push(text) });
+  const buildReply = await buildFetch(url, { method: 'POST', body: JSON.stringify(build) });
+  const wire = { ...buildSent, ...JSON.parse(buildSent.custom_include_body) };
+  for (const key of JSON.parse(buildSent.custom_exclude_body)) delete wire[key];
+  assert.equal(wire.tools?.[0]?.function.name, name);
+  assert.equal(wire.messages[0].role, 'system');
+  assert.match(wire.messages[0].content, /momiao_reply/);
+  assert.deepEqual(wire.messages.slice(1), buildMessages);
+  assert.deepEqual(buildSent.messages, wire.messages);
+  assert.equal(wire.model, buildExtra.model);
+  assert.equal(wire.reasoning_effort, 'low');
+  assert.equal(wire.max_tokens, undefined);
+  assert.match(await buildReply.text(), /Build 正文/);
+  // Conflicting controls must still pass through unchanged, without decoding.
+  for (const conflict of [
+    { custom_exclude_body: '["tools"]' },
+    { custom_exclude_body: 'messages' },
+    { custom_include_body: JSON.stringify({ ...buildExtra, tools: [] }) },
+    { custom_include_body: JSON.stringify({ ...buildExtra, model: 'other-model' }) },
+    { custom_include_body: JSON.stringify({ ...buildExtra, messages: [] }) },
+    { tools: [{ type: 'function', function: { name: 'existing_tool' } }] },
+  ]) {
+    const original = { ...build, ...conflict };
+    const reply = await buildFetch(url, { method: 'POST', body: JSON.stringify(original) });
+    assert.deepEqual(buildSent, original);
+    assert.match(statuses.at(-1), /本次按普通请求发送/);
+    await reply.body.cancel();
+  }
 });

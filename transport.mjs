@@ -7,6 +7,23 @@ function fault(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
+// aistudio-build-tavern 0.1.0: native attachment messages, duplicated in
+// custom_include_body. Permit only matching controls and harmless exclusions.
+function isBuildSplit(body, extra) {
+  if (!/^gemini-(3\.8-flash|4-argon)-build$/.test(body.model || '') || extra.model !== body.model ||
+      extra.reasoning_effort !== body.reasoning_effort ||
+      Object.keys(extra).some(key => !['model', 'messages', 'reasoning_effort'].includes(key)) ||
+      JSON.stringify(extra.messages) !== JSON.stringify(body.messages) ||
+      !body.messages.some(message => Array.isArray(message?.content) && message.content.some(part => part?.type === 'file'))) return false;
+  const allowed = ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'presence_penalty', 'frequency_penalty',
+    'repetition_penalty', 'stop', 'seed', 'logprobs', 'top_logprobs', 'logit_bias', 'user', 'verbosity',
+    'max_tokens', 'max_completion_tokens'];
+  try {
+    const excluded = JSON.parse(body.custom_exclude_body || '[]');
+    return Array.isArray(excluded) && excluded.every(key => allowed.includes(key));
+  } catch { return false; }
+}
+
 function prepare(body) {
   if (!Array.isArray(body.messages) || !body.messages.length) return '没有可发送的聊天消息';
   if (['quiet', 'impersonate'].includes(body.type)) return '辅助生成不使用正文工具';
@@ -17,8 +34,9 @@ function prepare(body) {
       ? JSON.parse(body.custom_include_body) : body.custom_include_body || {};
     if (!extra || typeof extra !== 'object' || Array.isArray(extra)) throw new Error();
   } catch { return '附加请求体须为空或 JSON 对象；此版本不改写 YAML'; }
-  if (body.custom_exclude_body?.trim() && body.custom_exclude_body.trim() !== '[]') return '请先检查附加参数中的排除字段，避免删掉工具';
-  const fields = ['tools', 'functions', 'tool_choice', 'function_call', 'messages', 'model', 'stream'];
+  const buildSplit = isBuildSplit(body, extra);
+  if (!buildSplit && body.custom_exclude_body?.trim() && body.custom_exclude_body.trim() !== '[]') return '请先检查附加参数中的排除字段，避免删掉工具';
+  const fields = ['tools', 'functions', 'tool_choice', 'function_call', 'stream', ...(buildSplit ? [] : ['messages', 'model'])];
   if (fields.some(key => Object.hasOwn(extra, key))) return '附加请求体已控制工具、模型或消息，请先移除冲突项';
   if (body.tools?.length || body.functions?.length || (body.tool_choice != null && body.tool_choice !== 'auto') || body.function_call != null) {
     return '已有工具调用；请停用旧防截断脚本及预设里的输出工具后再试';
@@ -37,8 +55,10 @@ function prepare(body) {
   const choice = { type: 'function', function: { name: TOOL } };
   let instruction = `Deliver your final answer by calling ${TOOL} exactly once. Put the final answer in its content string. Do not repeat the answer outside the tool. Preserve the requested language and formatting.`;
   if (body.type === 'continue') instruction += ' Continue the last assistant message with new text only; do not repeat its existing text.';
-  return { ...body, messages: [{ role: 'system', content: instruction }, ...body.messages], tools,
-    tool_choice: choice, custom_include_body: JSON.stringify({ ...extra, tools, tool_choice: choice, parallel_tool_calls: false }) };
+  const messages = [{ role: 'system', content: instruction }, ...body.messages];
+  return { ...body, messages, tools,
+    tool_choice: choice, custom_include_body: JSON.stringify({ ...extra, ...(buildSplit ? { messages } : {}),
+      tools, tool_choice: choice, parallel_tool_calls: false }) };
 }
 
 // A single output-only string: scan once, retain incomplete escapes across chunks.

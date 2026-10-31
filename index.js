@@ -1,4 +1,4 @@
-import { createTransportFetch } from './transport.mjs';
+import { createTransportFetch } from './transport.mjs?v=0.2.4';
 
 const ID = 'momiao-gemini-transport';
 const SLOT = Symbol.for(`${ID}.runtime`);

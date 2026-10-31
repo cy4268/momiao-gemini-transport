@@ -1,6 +1,8 @@
-# Momiao Gemini 防截断 0.2.3
+# Momiao Gemini 防截断 0.2.4
 
 独立的 SillyTavern / TauriTavern 前端扩展。它让 Gemini 把最终正文放进一个工具的 `content` 参数，再实时还原为普通聊天文字。不会运行模型生成的代码。
+
+0.2.4 兼容 [Build 助手分流扩展](https://github.com/cy4268/aistudio-build-tavern) 0.1.0：保留分流后的文件、模型、思考等级和参数排除项，把正文工具及其说明合并到最终请求中。只需更新本扩展，Build 分流扩展和服务端无需修改。
 
 0.2.3 修复标准 SillyTavern 转发流式回复时缺少响应类型标记，导致 `Unexpected token 'd' ... is not valid JSON` 的问题。插件会检查数据开头来识别流式回复，并保留一次性 JSON 回复的兼容处理。更新后刷新或重启酒馆即可。
 
@@ -18,7 +20,7 @@ https://github.com/cy4268/momiao-gemini-transport
 
 安装后刷新或重启酒馆。后续可通过扩展管理器更新。无需服务端插件、`npm install` 或单独配置密钥。
 
-**离线安装：**到 [Releases](https://github.com/cy4268/momiao-gemini-transport/releases/latest) 下载对应附件。标准 SillyTavern 使用 `Momiao-Gemini-0.2.3-ST.zip`，把其中的 `momiao-gemini-transport` 文件夹解压到酒馆的：
+**离线安装：**到 [Releases](https://github.com/cy4268/momiao-gemini-transport/releases/latest) 下载对应附件。标准 SillyTavern 使用 `Momiao-Gemini-0.2.4-ST.zip`，把其中的 `momiao-gemini-transport` 文件夹解压到酒馆的：
 
 ```text
 data/<你的用户目录>/extensions/momiao-gemini-transport/
@@ -26,7 +28,7 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 
 该文件夹里应直接看到 `manifest.json` 和 `index.js`，不要再套一层同名目录。刷新酒馆，在「扩展设置」中找到「Momiao Gemini 防截断」。这是前端扩展，不放进 `plugins/`，也不需要 `npm install`。
 
-**TT 2.4.0：**使用单独的 `Momiao-Gemini-0.2.3-TT-import.zip`，不解压，交给 TT 的数据导入功能。导入结束后重启 TT，再打开扩展设置。这个包的所有文件都位于 `extensions/third-party/momiao-gemini-transport/`，不含聊天、角色、密钥、数据库或设置文件。已按 TT 2.4.0 固定源码核对识别与合并规则，实际设备导入尚待验收。
+**TT 2.4.0：**使用单独的 `Momiao-Gemini-0.2.4-TT-import.zip`，不解压，交给 TT 的数据导入功能。导入结束后重启 TT，再打开扩展设置。这个包的所有文件都位于 `extensions/third-party/momiao-gemini-transport/`，不含聊天、角色、密钥、数据库或设置文件。已按 TT 2.4.0 固定源码核对识别与合并规则，实际设备导入尚待验收。
 
 两个包内容相同，只是目录布局不同。标准 ST 包、GitHub 自动生成的 Source code ZIP 都不能直接当 TT 数据包导入。离线安装没有 Git 更新来源；更新时导入新版包。已离线安装 0.1.0 的用户可直接覆盖更新；如改用 Git 安装，先在扩展管理器移除旧副本再安装，避免同时加载两份。
 
@@ -40,11 +42,20 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 
 流式和非流式跟随酒馆本来的选择；插件没有第二套流式开关。如果上游把工具参数攒齐才返回，即使开启流式，也可能整段出现；插件不能让尚未收到的文字提前显示。停止按钮仍由酒馆控制。「继续」仍由用户点击发起，插件不会自动重试或连续请求。开关变化对下一次请求生效，不会撤销正在进行的请求。
 
+## 配合 Build 助手分流
+
+更新到 0.2.4 后刷新 ST 或重启 TT，开启「启用正文工具传输」，连接仍用自定义 OpenAI 和 `https://momiao.win/v1`。
+
+- 使用 `build-st/gemini-3.8-flash-low` 等分流模型名时，先由 Build 扩展整理预设和附件，再由本扩展加入正文工具并还原回复。两个扩展都要启用，无需另设工具或附加请求体。
+- 直接使用 `gemini-3.8-flash-build` 也能启用正文工具，但不会触发 Build 分流扩展。
+- 仅识别 0.1.0 分流器生成的匹配模型、消息、思考等级和安全排除字段。手工覆盖消息、删除工具字段或已有其他工具时仍保持原请求，并显示跳过原因。
+- Build 后端可能等完整工具参数返回后才输出，因此正文可能整段出现。这里的工具只传输最终文字，不执行搜索、代码或其他外部操作。输入与输出长度上限不因本次适配而增加。
+
 ## 生效条件与限制
 
 - 只处理发往 **HTTPS momiao.win** 的自定义 OpenAI Gemini 聊天请求。保留渠道前缀，不改变模型名或用户的输出上限。
 - 仅支持一个候选回复、一个正文输出工具。已有工具历史、工具配置、联网/生图、结构化输出或附加参数冲突时，保留原请求并显示原因。
-- 附加请求体支持空值或 JSON 对象。为了不破坏用户配置，首版不改写 YAML；非空的排除字段也需要先检查处理。
+- 附加请求体支持空值或 JSON 对象。为了不破坏用户配置，首版不改写 YAML；非空的排除字段也需要先检查处理，只有上述 Build 分流请求中的已知安全字段例外。
 - 输入中的图片由原连接处理，插件不转换图片。生成图片的模型不属于本插件范围。
 - 普通辅助生成（`quiet`）、扮演用户（`impersonate`）保持原请求。
 - 内容过滤、达到 token 上限、超时和网络断开仍可能发生。已收到的文字会尽量保留，并显示异常；未收到的内容无法恢复。本插件不能保证规避审核或完全消除截断。
@@ -56,6 +67,8 @@ data/<你的用户目录>/extensions/momiao-gemini-transport/
 0.1.0 阶段的两次短调用验证过快速v、AIS-PG 的上游工具能力，没有验证长篇抗截断成功率，也没有经过用户设备中的 ST / TT。0.2.1 恢复该版本的传输核心；0.2.2 的设置折叠栏按上述两个固定版本的原生结构、事件处理和默认隐藏样式核对。
 
 0.2.3 复用现有一条传输回归测试，先复现与用户截图一致的 JSON 解析错误，再验证缺少类型标记的流式文字能在回复完成前显示、停止接收仍向上传递，以及一次性 JSON 回复仍能适配流式请求。检查 JavaScript 语法和扩展清单，不新增测试框架或真实模型调用。实际手机端和完整公网链路仍需用户设备确认。
+
+0.2.4 在同一条传输回归中验证 Build 请求合并后仍有正文工具和说明、附件不变、模型和思考等级保留，以及冲突请求原样跳过。此前原生 Build 短请求已验证 `momiao_reply` 返回与正文还原；本次分流组合采用离线联调及该真实回复回放，没有新增真实模型请求。完整 ST / TT 设备链路和长篇抗截断效果尚未验收。
 
 ## 关闭与卸载
 
